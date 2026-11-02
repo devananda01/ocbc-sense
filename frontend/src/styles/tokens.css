@@ -1,6 +1,7 @@
 :root {
   --red: #CC0000;
   --red-pressed: #A30000;
+    --red-tint: #FBEFEF;
   --text: #242424;
   --text-secondary: #666666;
   --bg: #F6F6F6;
