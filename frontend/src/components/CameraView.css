@@ -1,0 +1,18 @@
+.camera {
+  position: relative;
+  min-height: 20rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem 2.5rem;
+  color: #fff;
+  background: #242424;
+  border-radius: var(--radius-card);
+}
+.camera__frame { border: 3px dashed rgba(255, 255, 255, 0.85); }
+.camera--card .camera__frame { width: 80%; aspect-ratio: 1.586; border-radius: 12px; }
+.camera--face .camera__frame { width: 52%; aspect-ratio: 3 / 4; border-radius: 50%; }
+.camera__hint { margin: 0; text-align: center; }
+.camera__label { position: absolute; bottom: 0.75rem; font-size: 0.875rem; color: rgba(255, 255, 255, 0.75); }

@@ -5,13 +5,16 @@ import LanguagePill from '../components/LanguagePill'
 import Button from '../components/Button'
 import PassportPhoneArt from '../components/PassportPhoneArt'
 import { usePreferences } from '../context/PreferencesContext'
+import { useJourney } from '../context/JourneyContext'
 import './Welcome.css'
 
 export default function Welcome() {
   const navigate = useNavigate()
+  const journey = useJourney()
   const { prefs, update, startSetup } = usePreferences()
 
-  function createAccount() {
+    function createAccount() {
+    journey.reset()
     startSetup()
     navigate('/preferences/1')
   }

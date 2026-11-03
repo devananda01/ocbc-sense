@@ -6,17 +6,37 @@ import Header from '../components/Header'
 import OptionCard from '../components/OptionCard'
 import Button from '../components/Button'
 import Dialog from '../components/Dialog'
+import StatusBanner from '../components/StatusBanner'
+import { usePreferences } from '../context/PreferencesContext'
+import { useJourney } from '../context/JourneyContext'
 import './SignUp.css'
 
 export default function SignUp() {
   const navigate = useNavigate()
+  const { prefs } = usePreferences()
+  const { startJourney } = useJourney()
   const [singpassInfo, setSingpassInfo] = useState(false)
+  const [status, setStatus] = useState('idle') // idle | starting | error
+
+  async function start() {
+    setStatus('starting')
+    try {
+      await startJourney(prefs)
+      navigate('/step/1')
+    } catch {
+      setStatus('error')
+    }
+  }
 
   return (
     <>
       <Screen
         header={<Header onBack={() => navigate('/preferences/saved')} onSettings={() => navigate('/settings')} />}
-        footer={<Button onClick={() => navigate('/step/1')}>Continue →</Button>}
+        footer={
+          <Button onClick={start} loading={status === 'starting'}>
+            {status === 'starting' ? 'Starting…' : 'Continue →'}
+          </Button>
+        }
       >
         <h1 className="signup__title">Sign up</h1>
 
@@ -49,6 +69,12 @@ export default function SignUp() {
           <Info size={18} aria-hidden="true" />
           Singapore residents can retrieve personal info via Singpass. Foreigners will need an NFC-enabled phone.
         </p>
+
+        {status === 'error' && (
+          <StatusBanner variant="error" label="We couldn’t start your application">
+            Please try again.
+          </StatusBanner>
+        )}
       </Screen>
 
       <Dialog open={singpassInfo} onClose={() => setSingpassInfo(false)} title="Singpass is not part of this demo">

@@ -12,3 +12,6 @@ export function speak(text, language = 'en') {
   window.speechSynthesis.speak(utterance)
   return true
 }
+export function stopSpeaking() {
+  if (canSpeak()) window.speechSynthesis.cancel()
+}

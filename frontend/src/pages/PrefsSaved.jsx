@@ -1,47 +1,46 @@
 import { useNavigate } from 'react-router-dom'
-import { Check, Globe, Info, LayoutGrid, MessageSquare, Type, Volume2, VolumeX } from 'lucide-react'
+import { Check, Globe, LayoutGrid, MessageSquare, Type, Volume2, VolumeX } from 'lucide-react'
 import Screen from '../components/Screen'
 import Header from '../components/Header'
 import Button from '../components/Button'
 import { usePreferences } from '../context/PreferencesContext'
 import './Prefs.css'
+import { useT } from '../i18n/useT'
 
-const SIZE = { default: 'Standard', large: 'Large', larger: 'Larger', largest: 'Largest' }
-const LANGUAGE = { en: 'English', zh: '中文', ms: 'Bahasa Melayu' }
-const WORDING = { simple: 'Simple', standard: 'Standard' }
-const LAYOUT = { standard: 'Standard', guided: 'Guided' }
+const SIZE = { default: 'standard', large: 'large', larger: 'larger', largest: 'largest' }
+const LANGUAGE = { en: 'english', zh: 'chinese', ms: 'malay' }
+const WORDING = { simple: 'simple', standard: 'standard' }
+const LAYOUT = { standard: 'standard', guided: 'guided' }
 
 export default function PrefsSaved() {
   const navigate = useNavigate()
-  const { prefs, startSetup } = usePreferences()
+  const { prefs } = usePreferences()
+  const t = useT()
 
   function change() {
-    if (prefs.skipped) startSetup()
     navigate('/preferences/1')
   }
 
   const rows = [
-    { icon: Type, label: 'Text size', value: SIZE[prefs.textSize] },
-    { icon: Globe, label: 'Language', value: LANGUAGE[prefs.language] },
-    { icon: MessageSquare, label: 'Wording', value: WORDING[prefs.wording] },
-    { icon: prefs.readAloud ? Volume2 : VolumeX, label: 'Read aloud', value: prefs.readAloud ? 'On' : 'Off' },
-    { icon: LayoutGrid, label: 'Layout', value: LAYOUT[prefs.layout] },
+    { icon: Type, label: t('textSize'), value: t(SIZE[prefs.textSize]) },
+    { icon: Globe, label: t('language'), value: t(LANGUAGE[prefs.language]) },
+    { icon: MessageSquare, label: t('wording'), value: t(WORDING[prefs.wording]) },
+    { icon: prefs.readAloud ? Volume2 : VolumeX, label: t('readAloud'), value: prefs.readAloud ? t('on') : t('off') },
+    { icon: LayoutGrid, label: t('layout'), value: t(LAYOUT[prefs.layout]) },
   ]
 
   return (
     <Screen
       header={<Header desktopOnly />}
-      footer={<Button onClick={() => navigate('/signup')}>Continue to sign up</Button>}
+      footer={<Button onClick={() => navigate('/signup')}>{t('continueSignup')}</Button>}
     >
       <div className="saved">
-        <span className={`saved__icon ${prefs.skipped ? 'saved__icon--neutral' : 'saved__icon--ok'}`} aria-hidden="true">
-          {prefs.skipped ? <Info size={32} /> : <Check size={32} />}
+        <span className="saved__icon saved__icon--ok" aria-hidden="true">
+          <Check size={32} />
         </span>
-        <h1 className="saved__title">{prefs.skipped ? 'Using the default settings' : 'Your preferences are saved'}</h1>
+        <h1 className="saved__title">{t('savedTitle')}</h1>
         <p className="saved__intro">
-          {prefs.skipped
-            ? 'You can personalise the app any time in Settings.'
-            : 'We’ve set up the app the way you chose. You can change these any time in Settings.'}
+          {t('savedIntro')}
         </p>
 
         <div className="summary">
@@ -53,7 +52,7 @@ export default function PrefsSaved() {
           ))}
           <div className="summary__row">
             <Button variant="tertiary" onClick={change}>
-              {prefs.skipped ? 'Set up preferences' : 'Change preferences'}
+              {t('changePrefs')}
             </Button>
           </div>
         </div>

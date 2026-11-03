@@ -1,9 +1,9 @@
 @import './styles/tokens.css';
 
 html { font-size: 100%; }
-html[data-text-size="large"]   { font-size: 125%; }
-html[data-text-size="larger"]  { font-size: 150%; }
-html[data-text-size="largest"] { font-size: 200%; }
+html[data-text-size="large"]   { font-size: 112.5%; }
+html[data-text-size="larger"]  { font-size: 125%; }
+html[data-text-size="largest"] { font-size: 150%; }
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;

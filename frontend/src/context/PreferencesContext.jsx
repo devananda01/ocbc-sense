@@ -12,10 +12,10 @@ export const DEFAULTS = {
 
 
 function load() {
-  const base = { ...DEFAULTS, setupDone: false, skipped: false }
+  const base = { ...DEFAULTS, setupDone: false }
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return { ...base, ...JSON.parse(raw) }
+    if (raw) { const saved = JSON.parse(raw); delete saved.skipped; return { ...base, ...saved } }
   } catch {
     /* storage unavailable: use defaults */
   }
@@ -44,19 +44,14 @@ export function PreferencesProvider({ children }) {
   // Start setup with the recommended options pre-selected (as in the Figma).
   // Start setup from the plain defaults. Language stays as the customer chose it.
   const startSetup = useCallback(
-    () => setPrefs((p) => ({ ...DEFAULTS, language: p.language, setupDone: false, skipped: false })),
+    () => setPrefs((p) => ({ ...DEFAULTS, language: p.language, setupDone: false })),
     []
   )
-  const finishSetup = useCallback(() => setPrefs((p) => ({ ...p, setupDone: true, skipped: false })), [])
+  const finishSetup = useCallback(() => setPrefs((p) => ({ ...p, setupDone: true })), [])
 
-  // Skipping uses the plain defaults. Language stays as the customer chose it.
-  const skipSetup = useCallback(
-    () => setPrefs((p) => ({ ...DEFAULTS, language: p.language, setupDone: true, skipped: true })),
-    []
-  )
 
   return (
-    <PreferencesContext.Provider value={{ prefs, update, startSetup, finishSetup, skipSetup }}>
+    <PreferencesContext.Provider value={{ prefs, update, startSetup, finishSetup }}>
       {children}
     </PreferencesContext.Provider>
   )

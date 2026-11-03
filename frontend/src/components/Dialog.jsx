@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { X } from 'lucide-react'
 import './Dialog.css'
 
-export default function Dialog({ open, onClose, title, children }) {
+export default function Dialog({ open, onClose, title, className = '', children }) {
   const ref = useRef(null)
+  const titleId = useId()
 
   useEffect(() => {
     const d = ref.current
@@ -15,8 +16,8 @@ export default function Dialog({ open, onClose, title, children }) {
   return (
     <dialog
       ref={ref}
-      className="dialog"
-      aria-labelledby="dialog-title"
+      className={`dialog ${className}`.trim()}
+      aria-labelledby={titleId}
       onClose={onClose}
       onClick={(e) => {
         if (e.target === ref.current) onClose()
@@ -25,7 +26,7 @@ export default function Dialog({ open, onClose, title, children }) {
       <div className="dialog__panel">
         <div className="dialog__handle" aria-hidden="true" />
         <div className="dialog__head">
-          <h2 id="dialog-title" className="dialog__title">{title}</h2>
+          <h2 id={titleId} className="dialog__title">{title}</h2>
           <button className="dialog__close" onClick={onClose} aria-label="Close">
             <X size={20} aria-hidden="true" />
           </button>
