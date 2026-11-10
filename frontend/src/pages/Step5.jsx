@@ -5,37 +5,31 @@ import StepScreen from '../components/StepScreen'
 import StatusBanner from '../components/StatusBanner'
 import Card from '../components/Card'
 import Button from '../components/Button'
+import Guidance from '../components/Guidance'
+import PageReadAloud from '../components/PageReadAloud'
 import OptionCard from '../components/OptionCard'
 import { usePreferences } from '../context/PreferencesContext'
 import { useJourney } from '../context/JourneyContext'
 import { usePresenter } from '../context/PresenterContext'
 import { useHelp } from '../context/HelpContext'
 import usePageView from '../hooks/usePageView'
-import { getPage, pageText } from '../data/content'
-import { DOC_TYPES } from '../data/documents'
+import useT from '../i18n/useT'
+import { getPage, pageText, pageTitle } from '../data/content'
+import { DOC_TYPES, docLabel } from '../data/documents'
 import { simulateDocumentUpload } from '../api/simulate'
 import { logEvent } from '../api/client'
 
-const FAILURES = {
-  DOC_UNREADABLE: {
-    label: 'File not clear',
-    text: 'This file is hard to read. Please upload a clearer copy.',
-    tip: 'Use good light, keep all four corners in view, and upload a clear copy.',
-  },
-  DOC_WRONG_TYPE: {
-    label: 'Document not accepted',
-    text: 'This document isn’t on the accepted list.',
-    tip: 'Check the accepted documents and choose a different one.',
-  },
-}
+// The wording of each failure lives in src/i18n (s5.fail.<CODE>.label / .text / .tip).
+const FAILURE_CODES = ['DOC_UNREADABLE', 'DOC_WRONG_TYPE']
 
 export default function Step5() {
   const navigate = useNavigate()
+  const { t, tw, lang } = useT()
   const { prefs } = usePreferences()
   const { sessionId, done, attempts, markDone, recordAttempt, documentType, setDocumentType } = useJourney()
   const { scenarios } = usePresenter()
-  const { openHelp } = useHelp()
-  const page = getPage('account.step5', prefs.language)
+  const { openStaff } = useHelp()
+  const page = getPage('account.step5')
   usePageView('account.step5')
 
   const [phase, setPhase] = useState(done.doc ? 'uploaded' : 'choose') // choose | uploading | failed | uploaded
@@ -44,7 +38,17 @@ export default function Step5() {
 
   useEffect(() => () => { runId.current += 1 }, [])
 
-  const typeLabel = DOC_TYPES.find((d) => d.id === documentType)?.label
+  const typeLabel = documentType ? docLabel(documentType, lang) : ''
+  const guidanceMessage =
+    phase === 'uploading'
+      ? tw('s5.guidance.upload')
+      : phase === 'uploaded'
+        ? tw('s5.guidance.continue')
+        : phase === 'failed'
+          ? tw('s5.guidance.file')
+          : !documentType
+            ? tw('s5.guidance.type')
+            : tw('s5.guidance.file')
 
   function choose(id) {
     setDocumentType(id)
@@ -81,14 +85,15 @@ export default function Step5() {
       {body}
     </StepScreen>
   )
-  const intro = <p className="step__intro">{pageText(page, prefs.wording)}</p>
+  const title = pageTitle(page._id, lang)
+  const intro = <p className="step__intro">{pageText(page, prefs.wording, lang)}</p>
   const fileCard = (extra) => (
     <Card className="details">
       <div className="detail">
         <span className="detail__icon" aria-hidden="true"><FileText size={20} /></span>
         <span className="detail__text">
           <span className="detail__label">{typeLabel}</span>
-          <span className="detail__value">sample-document.pdf</span>
+          <span className="detail__value">{t('s5.filename')}</span>
         </span>
         {extra}
       </div>
@@ -97,45 +102,57 @@ export default function Step5() {
 
   if (phase === 'uploading') {
     return frame(
-      <Button disabled loading>Uploading…</Button>,
+      <Button disabled loading>{t('s5.uploading')}</Button>,
       <>
-        <h1 className="step__title">{page.title}</h1>
+        <h1 className="step__title">{title}</h1>
+        <PageReadAloud
+          text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
         {fileCard()}
-        <StatusBanner variant="loading" label="Uploading your document…">Please keep the app open.</StatusBanner>
+        <StatusBanner variant="loading" label={t('s5.uploading.label')}>{t('common.keepOpen')}</StatusBanner>
       </>
     )
   }
 
   if (phase === 'uploaded') {
     return frame(
-      <Button onClick={() => navigate('/step/6')}>Continue →</Button>,
+      <Button onClick={() => navigate('/step/6')}>{t('common.continue')}</Button>,
       <>
-        <h1 className="step__title">{page.title}</h1>
-        <StatusBanner variant="success" label="Document added">
-          This is simulated. No real document is collected.
+        <h1 className="step__title">{title}</h1>
+        <PageReadAloud
+          text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
+        <StatusBanner variant="success" label={t('s5.added.label')}>
+          {t('s5.added.text')}
         </StatusBanner>
-        {fileCard(<Button variant="tertiary" onClick={replace}>Replace</Button>)}
+        {fileCard(<Button variant="tertiary" onClick={replace}>{t('s5.replace')}</Button>)}
       </>
     )
   }
 
   if (phase === 'failed') {
-    const failure = FAILURES[errorCode] ?? FAILURES.DOC_UNREADABLE
+    const code = FAILURE_CODES.includes(errorCode) ? errorCode : 'DOC_UNREADABLE'
     return frame(
       <>
         <Button onClick={upload}>
-          <RotateCcw size={18} aria-hidden="true" /> Upload again
+          <RotateCcw size={18} aria-hidden="true" /> {t('s5.again')}
         </Button>
-        <Button variant="secondary" onClick={openHelp}>Talk to a staff member</Button>
-        <Button variant="tertiary" onClick={() => setPhase('choose')}>Change document type</Button>
+        <Button variant="secondary" onClick={openStaff}>{t('common.staff')}</Button>
+        <Button variant="tertiary" onClick={() => setPhase('choose')}>{t('s5.changeType')}</Button>
       </>,
       <>
-        <h1 className="step__title">{page.title}</h1>
+        <h1 className="step__title">{title}</h1>
         {intro}
-        <StatusBanner variant="error" label={failure.label}>
-          {failure.text} Your information is saved.
+        <PageReadAloud
+          text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
+        <StatusBanner variant="error" label={t(`s5.fail.${code}.label`)}>
+          {tw('common.withSaved', { text: tw(`s5.fail.${code}.text`) })}
         </StatusBanner>
-        <StatusBanner variant="tip" label="Try this">{failure.tip}</StatusBanner>
+        <StatusBanner variant="tip" label={t('common.tryThis')}>{tw(`s5.fail.${code}.tip`)}</StatusBanner>
         {fileCard()}
       </>
     )
@@ -143,23 +160,26 @@ export default function Step5() {
 
   return frame(
     <Button disabled={!documentType} onClick={upload}>
-      <Upload size={20} aria-hidden="true" /> Choose sample file
+      <Upload size={20} aria-hidden="true" /> {t('s5.cta')}
     </Button>,
     <>
-      <h1 className="step__title">{page.title}</h1>
+      <h1 className="step__title">{title}</h1>
       {intro}
-      <h2 className="step__subtitle">Choose one document</h2>
-      <div className="doc-list" role="group" aria-label="Accepted documents">
+      <PageReadAloud
+        text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+      />
+      <Guidance message={guidanceMessage} />
+      <h2 className="step__subtitle">{t('s5.choose')}</h2>
+      <div className="doc-list" role="group" aria-label={t('s5.group')}>
         {DOC_TYPES.map((d) => (
           <OptionCard key={d.id} selected={documentType === d.id} onSelect={() => choose(d.id)}>
-            <span className="option__title">{d.label}</span>
+            <span className="option__title">{docLabel(d.id, lang)}</span>
           </OptionCard>
         ))}
       </div>
       <p className="step__note">
         <Info size={16} aria-hidden="true" />
-        Use a document dated within the last 3 months. In the real process OCBC asks for this by email after you
-        submit, and you reply within 7 days. This prototype lets you add it here.
+        {tw('s5.note')}
       </p>
     </>
   )

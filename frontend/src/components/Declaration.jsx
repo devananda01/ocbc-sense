@@ -1,6 +1,8 @@
 import { Check, TriangleAlert } from 'lucide-react'
+import useT from '../i18n/useT'
 
 export default function Declaration({ checked, onToggle, error, disabled, children }) {
+  const { t } = useT()
   return (
     <button
       type="button"
@@ -17,7 +19,7 @@ export default function Declaration({ checked, onToggle, error, disabled, childr
         {children}
         {error && (
           <span className="decl__required">
-            <TriangleAlert size={16} aria-hidden="true" /> Please tick this box
+            <TriangleAlert size={16} aria-hidden="true" /> {t('s6.decl.required')}
           </span>
         )}
       </span>

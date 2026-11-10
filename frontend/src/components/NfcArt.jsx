@@ -1,11 +1,13 @@
 import './NfcArt.css'
+import useT from '../i18n/useT'
 
 export default function NfcArt({ scanning = false }) {
+  const { t } = useT()
   return (
     <svg
       viewBox="0 0 260 176"
       role="img"
-      aria-label="A phone held flat against a passport"
+      aria-label={t('art.nfc')}
       className={`nfc-art ${scanning ? 'nfc-art--scanning' : ''}`.trim()}
     >
       <g fill="#fff" stroke="#242424" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">

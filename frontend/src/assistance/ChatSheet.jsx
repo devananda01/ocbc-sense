@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, Info } from 'lucide-react'
 import Button from '../components/Button'
 import { suggestedQuestions } from '../data/answers'
+import useT from '../i18n/useT'
 
 export default function ChatSheet({ title, pageId, messages, asking, canStaff, onAsk, onRate, onStaff }) {
+  const { t, lang } = useT()
   const [text, setText] = useState('')
   const endRef = useRef(null)
   const asked = new Set(messages.filter((m) => m.from === 'user').map((m) => m.text))
-  const chips = suggestedQuestions(pageId).filter((q) => !asked.has(q))
+  const chips = suggestedQuestions(pageId, lang).filter((q) => !asked.has(q))
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' })
@@ -24,11 +26,11 @@ export default function ChatSheet({ title, pageId, messages, asking, canStaff, o
     <div className="chat">
       {title && (
         <p className="chat__context">
-          <Info size={14} aria-hidden="true" /> Helping with: {title}
+          <Info size={14} aria-hidden="true" /> {t('chat.context', { title })}
         </p>
       )}
       <div className="chat__log" role="log" aria-live="polite">
-        {messages.length === 0 && <p className="chat__empty">Ask about this step, or tap a question below.</p>}
+        {messages.length === 0 && <p className="chat__empty">{t('chat.empty')}</p>}
         {messages.map((m) =>
           m.from === 'user' ? (
             <div key={m.id} className="msg msg--user">
@@ -41,25 +43,25 @@ export default function ChatSheet({ title, pageId, messages, asking, canStaff, o
               <p className="msg__bubble">{m.text}</p>
               <span className="msg__time">{m.time}</span>
               {canStaff && (m.fallback || m.refused) && m.feedback === null && (
-                <Button variant="secondary" fullWidth={false} onClick={onStaff}>Talk to a staff member</Button>
+                <Button variant="secondary" fullWidth={false} onClick={onStaff}>{t('common.staff')}</Button>
               )}
               {!m.fallback && !m.refused && m.feedback === null && (
                 <div className="msg__rate">
-                  <Button variant="secondary" fullWidth={false} onClick={() => onRate(m.id, 'helped')}>That helped</Button>
+                  <Button variant="secondary" fullWidth={false} onClick={() => onRate(m.id, 'helped')}>{t('chat.rate.helped')}</Button>
                   {canStaff ? (
                     <Button variant="tertiary" fullWidth={false} onClick={() => onRate(m.id, 'not_helped')}>
-                      Still stuck → Talk to a person
+                      {t('chat.rate.stuck.staff')}
                     </Button>
                   ) : (
-                    <Button variant="tertiary" fullWidth={false} onClick={() => onRate(m.id, 'not_helped')}>Still stuck</Button>
+                    <Button variant="tertiary" fullWidth={false} onClick={() => onRate(m.id, 'not_helped')}>{t('chat.rate.stuck')}</Button>
                   )}
                 </div>
               )}
-              {m.feedback === 'helped' && <span className="msg__time">Glad that helped.</span>}
+              {m.feedback === 'helped' && <span className="msg__time">{t('chat.glad')}</span>}
             </div>
           )
         )}
-        {asking && <p className="chat__typing" role="status">Sense is typing…</p>}
+        {asking && <p className="chat__typing" role="status">{t('chat.typing')}</p>}
         <div ref={endRef} />
       </div>
 
@@ -77,14 +79,14 @@ export default function ChatSheet({ title, pageId, messages, asking, canStaff, o
           value={text}
           maxLength={300}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type your question"
-          aria-label="Type your question"
+          placeholder={t('chat.placeholder')}
+          aria-label={t('chat.placeholder')}
         />
-        <button className="chat__send" type="submit" aria-label="Send" disabled={!text.trim() || asking}>
+        <button className="chat__send" type="submit" aria-label={t('chat.send')} disabled={!text.trim() || asking}>
           <ArrowUp size={20} aria-hidden="true" />
         </button>
       </form>
-      <p className="step__caption">Simulated AI assistant for this prototype. Answers are pre-written for this step; please don’t type personal details.</p>
+      <p className="step__caption">{t('chat.caption')}</p>
     </div>
   )
 }

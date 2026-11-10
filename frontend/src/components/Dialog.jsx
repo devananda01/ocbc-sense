@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef } from 'react'
 import { X } from 'lucide-react'
 import './Dialog.css'
+import useT from '../i18n/useT'
 
 export default function Dialog({ open, onClose, title, className = '', children }) {
+  const { t } = useT()
   const ref = useRef(null)
   const titleId = useId()
 
@@ -27,7 +29,7 @@ export default function Dialog({ open, onClose, title, className = '', children 
         <div className="dialog__handle" aria-hidden="true" />
         <div className="dialog__head">
           <h2 id={titleId} className="dialog__title">{title}</h2>
-          <button className="dialog__close" onClick={onClose} aria-label="Close">
+          <button className="dialog__close" onClick={onClose} aria-label={t('common.close')}>
             <X size={20} aria-hidden="true" />
           </button>
         </div>

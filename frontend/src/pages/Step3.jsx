@@ -5,41 +5,30 @@ import StepScreen from '../components/StepScreen'
 import StatusBanner from '../components/StatusBanner'
 import Card from '../components/Card'
 import Button from '../components/Button'
+import Guidance from '../components/Guidance'
+import PageReadAloud from '../components/PageReadAloud'
 import NfcArt from '../components/NfcArt'
 import { usePreferences } from '../context/PreferencesContext'
 import { useJourney } from '../context/JourneyContext'
 import { usePresenter } from '../context/PresenterContext'
 import { useHelp } from '../context/HelpContext'
 import usePageView from '../hooks/usePageView'
-import { getPage, pageText } from '../data/content'
+import useT from '../i18n/useT'
+import { getPage, pageText, pageTitle } from '../data/content'
 import { simulateNfcScan } from '../api/simulate'
 import { logEvent } from '../api/client'
 
-const FAILURES = {
-  NFC_NOT_SUPPORTED: {
-    label: 'Scan failed',
-    text: 'This phone can’t read passport chips. Try another phone with NFC.',
-    tip: 'Use a phone with NFC and a camera, or talk to a staff member.',
-  },
-  NFC_CHIP_NOT_FOUND: {
-    label: 'Scan failed',
-    text: 'We couldn’t find the chip. Move your phone slowly over the passport.',
-    tip: 'Place your phone flat on the passport cover, keep both still, and remove a thick phone case.',
-  },
-  NFC_READ_FAILED: {
-    label: 'Scan stopped',
-    text: 'The scan stopped before it finished. Keep your phone still and try again.',
-    tip: 'Hold your phone flat against the passport and keep both still until the scan finishes.',
-  },
-}
+// The wording of each failure lives in src/i18n (s3.fail.<CODE>.label / .text / .tip).
+const FAILURE_CODES = ['NFC_NOT_SUPPORTED', 'NFC_CHIP_NOT_FOUND', 'NFC_READ_FAILED']
 
 export default function Step3() {
   const navigate = useNavigate()
+  const { t, tw, lang } = useT()
   const { prefs } = usePreferences()
   const { sessionId, done, attempts, markDone, recordAttempt } = useJourney()
   const { scenarios } = usePresenter()
-  const { openHelp } = useHelp()
-  const page = getPage('account.step3', prefs.language)
+  const { openStaff } = useHelp()
+  const page = getPage('account.step3')
   usePageView('account.step3')
 
   const [phase, setPhase] = useState(done.nfc ? 'success' : 'ready') // ready | scanning | failed | success
@@ -81,18 +70,31 @@ export default function Step3() {
       {body}
     </StepScreen>
   )
-  const intro = <p className="step__intro">{pageText(page, prefs.wording)}</p>
+  const title = pageTitle(page._id, lang)
+  const intro = <p className="step__intro">{pageText(page, prefs.wording, lang)}</p>
+  const guidanceMessage =
+    phase === 'scanning'
+      ? tw('s3.guidance.wait')
+      : phase === 'success'
+        ? tw('s3.guidance.continue')
+        : phase === 'failed'
+          ? tw('s3.guidance.position')
+          : tw('s3.guidance.start')
 
   if (phase === 'scanning') {
     return frame(
       <Button variant="secondary" onClick={cancelScan}>
-        <X size={18} aria-hidden="true" /> Cancel scan
+        <X size={18} aria-hidden="true" /> {t('s3.cancel')}
       </Button>,
       <>
-        <h1 className="step__title">Reading your passport…</h1>
+        <h1 className="step__title">{t('s3.reading')}</h1>
         {intro}
+        <PageReadAloud
+          text={[t('s3.reading'), pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
         <Card className="art-card"><NfcArt scanning /></Card>
-        <StatusBanner variant="loading" label="Keep your phone still. This takes a few seconds." />
+        <StatusBanner variant="loading" label={tw('s3.wait')} />
       </>
     )
   }
@@ -100,50 +102,60 @@ export default function Step3() {
   if (phase === 'success') {
     return frame(
       <>
-        <Button onClick={() => navigate('/step/4')}>Continue →</Button>
-        <Button variant="tertiary" onClick={scanAgain}>Scan again</Button>
+        <Button onClick={() => navigate('/step/4')}>{t('common.continue')}</Button>
+        <Button variant="tertiary" onClick={scanAgain}>{t('s3.again')}</Button>
       </>,
       <>
-        <h1 className="step__title">{page.title}</h1>
-        <StatusBanner variant="success" label="Passport read">
-          We read your passport chip. This is simulated. No real passport data is collected.
+        <h1 className="step__title">{title}</h1>
+        <PageReadAloud
+          text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
+        <StatusBanner variant="success" label={t('s3.success.label')}>
+          {t('s3.success.text')}
         </StatusBanner>
       </>
     )
   }
 
   if (phase === 'failed') {
-    const failure = FAILURES[errorCode] ?? FAILURES.NFC_READ_FAILED
+    const code = FAILURE_CODES.includes(errorCode) ? errorCode : 'NFC_READ_FAILED'
     return frame(
       <>
         <Button onClick={startScan}>
-          <RotateCcw size={18} aria-hidden="true" /> Try again
+          <RotateCcw size={18} aria-hidden="true" /> {t('s3.retry')}
         </Button>
-        <Button variant="secondary" onClick={openHelp}>Talk to a staff member</Button>
+        <Button variant="secondary" onClick={openStaff}>{t('common.staff')}</Button>
       </>,
       <>
-        <h1 className="step__title">{page.title}</h1>
+        <h1 className="step__title">{title}</h1>
         {intro}
-        <StatusBanner variant="error" label={failure.label}>
-          {failure.text} Your information is saved.
+        <PageReadAloud
+          text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+        />
+        <Guidance message={guidanceMessage} />
+        <StatusBanner variant="error" label={t(`s3.fail.${code}.label`)}>
+          {tw('common.withSaved', { text: tw(`s3.fail.${code}.text`) })}
         </StatusBanner>
-        <StatusBanner variant="tip" label="Try this">{failure.tip}</StatusBanner>
+        <StatusBanner variant="tip" label={t('common.tryThis')}>{tw(`s3.fail.${code}.tip`)}</StatusBanner>
       </>
     )
   }
 
   return frame(
     <Button onClick={startScan}>
-      <Smartphone size={20} aria-hidden="true" /> Start scan
+      <Smartphone size={20} aria-hidden="true" /> {t('s3.start')}
     </Button>,
     <>
-      <h1 className="step__title">{page.title}</h1>
+      <h1 className="step__title">{title}</h1>
       {intro}
+      <PageReadAloud
+        text={[title, pageText(page, prefs.wording, lang), guidanceMessage].filter(Boolean).join('. ')}
+      />
+      <Guidance message={guidanceMessage} />
       <Card className="art-card">
         <NfcArt />
-        <p className="step__caption">
-          Keep both still until the scan finishes. Removing a thick phone case can help.
-        </p>
+        <p className="step__caption">{tw('s3.caption')}</p>
       </Card>
     </>
   )

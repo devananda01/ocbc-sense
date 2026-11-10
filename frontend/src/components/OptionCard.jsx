@@ -1,7 +1,9 @@
 import { Check } from 'lucide-react'
 import './OptionCard.css'
+import useT from '../i18n/useT'
 
 export default function OptionCard({ selected, onSelect, tone = 'red', tag = false, children }) {
+  const { t } = useT()
   return (
     <button
       type="button"
@@ -12,7 +14,7 @@ export default function OptionCard({ selected, onSelect, tone = 'red', tag = fal
       <span className="option__body">
         {tag && selected && (
           <span className="option__tag">
-            <Check size={14} aria-hidden="true" /> Selected
+            <Check size={14} aria-hidden="true" /> {t('common.selected')}
           </span>
         )}
         {children}

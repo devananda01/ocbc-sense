@@ -1,9 +1,11 @@
 import { Check } from 'lucide-react'
 import './StepList.css'
+import useT from '../i18n/useT'
 
 export default function StepList({ steps, current }) {
+  const { t } = useT()
   return (
-    <nav className="step-list" aria-label="Application steps">
+    <nav className="step-list" aria-label={t('step.list')}>
       <ol>
         {steps.map((title, i) => {
           const n = i + 1

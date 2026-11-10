@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import './LanguagePill.css'
+import useT from '../i18n/useT'
 
 const OPTIONS = [
   { code: 'en', label: 'EN' },
@@ -8,8 +9,9 @@ const OPTIONS = [
 ]
 
 export default function LanguagePill({ value, onChange }) {
+  const { t } = useT()
   return (
-    <div className="lang-pill" role="radiogroup" aria-label="Language">
+    <div className="lang-pill" role="radiogroup" aria-label={t('common.language')}>
       {OPTIONS.map((o) => {
         const selected = o.code === value
         return (

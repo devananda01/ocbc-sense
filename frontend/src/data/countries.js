@@ -1,11 +1,15 @@
-// Passport countries supported by the documented eligibility API.
-export const COUNTRIES = [
-  { code: 'HK', name: 'Hong Kong (HKSAR)' },
-  { code: 'MY', name: 'Malaysia' },
-  { code: 'ID', name: 'Indonesia' },
-  { code: 'CN', name: 'Mainland China' },
-]
+import { translate } from "../i18n";
 
-export function countryName(code) {
-  return COUNTRIES.find((c) => c.code === code)?.name ?? ''
+// Locations based on OCBC's international network list.
+// All locations are displayed consistently without implying eligibility.
+export const COUNTRIES = [
+  { code: "MY", name: "Malaysia" },
+  { code: "ID", name: "Indonesia" },
+  { code: "CN", name: "Mainland China" },
+  { code: "HK", name: "Hong Kong (HKSAR)" },
+];
+
+export function countryName(code, lang = "en") {
+  if (!COUNTRIES.some((c) => c.code === code)) return "";
+  return translate(lang, `country.${code}`);
 }

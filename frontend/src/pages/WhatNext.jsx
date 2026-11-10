@@ -4,9 +4,12 @@ import { Banknote, ChevronDown, CircleCheck, FileText, Wallet } from 'lucide-rea
 import Screen from '../components/Screen'
 import Header from '../components/Header'
 import Button from '../components/Button'
+import Guidance from '../components/Guidance'
+import PageReadAloud from '../components/PageReadAloud'
 import { useJourney } from '../context/JourneyContext'
-import { getPage } from '../data/content'
-import { DOC_TYPES } from '../data/documents'
+import useT from '../i18n/useT'
+import { pageInfo, pageTitle } from '../data/content'
+import { DOC_TYPES, docLabel } from '../data/documents'
 
 function Accordion({ icon: Icon, title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -27,60 +30,55 @@ function Accordion({ icon: Icon, title, defaultOpen = false, children }) {
 
 export default function WhatNext() {
   const navigate = useNavigate()
-  const { reference, reset } = useJourney()
-  const page = getPage('account.submitted')
+  const { t, tw, lang } = useT()
+  const { reference } = useJourney()
 
   if (!reference) return <Navigate to="/welcome" replace />
 
   function done() {
-    reset()
-    navigate('/welcome')
+    navigate('/home')
   }
 
   return (
     <Screen
-      header={<Header onBack={() => navigate('/submitted')} />}
-      footer={<Button onClick={done}>Done</Button>}
+      header={<Header onBack={() => navigate('/home')} />}
+      footer={<Button onClick={done}>{t('sub.home')}</Button>}
     >
-      <h1 className="step__title">{page.title}</h1>
-      <p className="step__intro">{page.verified_info}</p>
+      <h1 className="step__title">{pageTitle('account.submitted', lang)}</h1>
+      <PageReadAloud
+        text={[
+          pageTitle('account.submitted', lang),
+          pageInfo('account.submitted', lang),
+          tw('next.guidance.email'),
+        ].filter(Boolean).join('. ')}
+      />
+      <p className="step__intro">{pageInfo('account.submitted', lang)}</p>
+      <Guidance message={tw('next.guidance.email')} />
 
-      <Accordion icon={FileText} title="Your supporting document" defaultOpen>
-        <p>
-          Reply to our email within 7 days with one document dated within the last 3 months. Put your passport
-          number in the email subject.
-        </p>
-        <p className="acc__label">Accepted documents</p>
+      <Accordion icon={FileText} title={t('wn.doc.title')} defaultOpen>
+        <p>{tw('wn.doc.text')}</p>
+        <p className="acc__label">{t('wn.doc.accepted')}</p>
         <ul className="acc__list">
           {DOC_TYPES.map((d) => (
             <li key={d.id}>
               <CircleCheck size={18} aria-hidden="true" />
-              <span>{d.label}</span>
+              <span>{docLabel(d.id, lang)}</span>
             </li>
           ))}
         </ul>
       </Accordion>
 
-      <Accordion icon={Wallet} title="Your accounts">
-        <p>
-          If your application is successful, OCBC opens a Statement Savings Account (SGD) and a Global Savings
-          Account (USD).
-        </p>
+      <Accordion icon={Wallet} title={t('wn.acct.title')}>
+        <p>{tw('wn.acct.text')}</p>
       </Accordion>
 
-      <Accordion icon={Banknote} title="Your first deposit">
-        <p>
-          Deposit at least S$3,000 in a single transaction, from a bank account in your own name, within 90 days of
-          account opening.
-        </p>
-        <p>
-          You can use a FAST transfer from an existing SGD account, or an overseas telegraphic transfer using SWIFT
-          code OCBCSGSG. Digital wallets are not accepted for this first deposit.
-        </p>
-        <p>If the deposit isn’t made, the account will be closed.</p>
+      <Accordion icon={Banknote} title={t('wn.dep.title')}>
+        <p>{tw('wn.dep.1')}</p>
+        <p>{tw('wn.dep.2')}</p>
+        <p>{tw('wn.dep.3')}</p>
       </Accordion>
 
-      <p className="step__caption">Based on OCBC’s published information. Screens in this prototype are simulated.</p>
+      <p className="step__caption">{t('wn.caption')}</p>
     </Screen>
   )
 }

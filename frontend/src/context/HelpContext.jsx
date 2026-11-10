@@ -1,26 +1,63 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import Dialog from '../components/Dialog'
-import { useJourney } from './JourneyContext'
-import { usePreferences } from './PreferencesContext'
-import { usePresenter } from './PresenterContext'
-import { logEvent, patchSession, subscribeEvents, toApiPrefs } from '../api/client'
-import { startStaffSimulation } from '../api/simulate'
-import { getPage } from '../data/content'
-import { answerFor, pageVerifiedInfo } from '../data/answers'
-import { speak } from '../utils/speech'
-import MenuSheet from '../assistance/MenuSheet'
-import ChatSheet from '../assistance/ChatSheet'
-import ConsentSheet from '../assistance/ConsentSheet'
-import StaffSheet from '../assistance/StaffSheet'
-import OfferCard from '../assistance/OfferCard'
-import StaffStatusBar from '../assistance/StaffStatusBar'
-import '../assistance/assistance.css'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useLocation } from "react-router-dom";
+import Dialog from "../components/Dialog";
+import { useJourney } from "./JourneyContext";
+import { usePreferences } from "./PreferencesContext";
+import { usePresenter } from "./PresenterContext";
+import {
+  explainQuestion,
+  logEvent,
+  patchSession,
+  subscribeEvents,
+  toApiPrefs,
+} from "../api/client";
+import { startStaffSimulation } from "../api/simulate";
+import { getPage } from "../data/content";
+import { speak } from "../utils/speech";
+import MenuSheet from "../assistance/MenuSheet";
+import ChatSheet from "../assistance/ChatSheet";
+import ConsentSheet from "../assistance/ConsentSheet";
+import StaffSheet from "../assistance/StaffSheet";
+import StaffStatusBar from "../assistance/StaffStatusBar";
+import "../assistance/assistance.css";
 
-// Real timers follow the data design (45 s). Demo timers are used when the
-// page was opened with ?presenter=1.
-const REAL = { offer: 45_000, tip: 180_000, glow: 360_000 }
-const DEMO = { offer: 10_000, tip: 20_000, glow: 40_000 }
+/*
+  Assistance timing:
+
+  0–3 minutes:
+  - Normal page
+  - AskSense is always available
+
+  After 3 minutes of inactivity:
+  - Show guidance / tip level
+
+  After 6 minutes of inactivity:
+  - Escalate AskSense / AI assistance level
+
+  Friction triggers:
+  - repeated errors
+  - back and forth navigation
+
+  These escalate directly to level 2.poke
+*/
+
+const REAL = {
+  tip: 180_000,
+  glow: 360_000,
+};
+
+const DEMO = {
+  tip: 10_000,
+  glow: 20_000,
+};
 
 const HelpContext = createContext({
   openHelp: () => {},
@@ -28,355 +65,733 @@ const HelpContext = createContext({
   openStaff: () => {},
   level: 0,
   pageId: null,
-})
+});
 
 function pageIdFor(pathname) {
-  const m = pathname.match(/^\/step\/(\d)$/)
-  if (m) return `account.step${m[1]}`
-  if (['/submitted', '/next', '/home'].includes(pathname)) return 'account.submitted'
-  return null
-}
-const stepOf = (id) => (id?.startsWith('account.step') ? Number(id.slice(-1)) : null)
-const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const m = pathname.match(/^\/step\/(\d)$/);
 
-let uid = 0
-const nextId = (p) => `${p}${(uid += 1)}`
+  if (m) {
+    return `account.step${m[1]}`;
+  }
+
+  if (["/submitted", "/next", "/home"].includes(pathname)) {
+    return "account.submitted";
+  }
+
+  return null;
+}
+
+const stepOf = (id) =>
+  id?.startsWith("account.step") ? Number(id.slice(-1)) : null;
+
+const clock = () =>
+  new Date().toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+let uid = 0;
+
+const nextId = (prefix) => `${prefix}${(uid += 1)}`;
 
 export function HelpProvider({ children }) {
-  const { pathname } = useLocation()
-  const { sessionId } = useJourney()
-  const { prefs } = usePreferences()
-  const { enabled: demo, scenarios } = usePresenter()
-  const T = demo ? DEMO : REAL
+  const { pathname } = useLocation();
 
-  const pageId = pageIdFor(pathname)
-  const step = stepOf(pageId)
-  const page = pageId ? getPage(pageId) : null
+  const { sessionId } = useJourney();
 
-  const [sheet, setSheet] = useState(null) // null | menu | chat | consent | staff
-  const [offer, setOffer] = useState(null) // null | { id, trigger }
-  const [level, setLevel] = useState(0) // 0 none, 1 tip banner, 2 glow + arrow
-  const [messages, setMessages] = useState([])
-  const [asking, setAsking] = useState(false)
-  const [staff, setStaff] = useState({ status: 'idle', position: 0, messages: [], unread: false })
+  const { prefs } = usePreferences();
 
-  // Latest values for timers and event listeners.
-  const live = useRef({})
-  live.current = { pageId, step, sessionId, sheet, offer, staffStatus: staff.status, prefs, scenarios }
+  const { enabled: demo, scenarios } = usePresenter();
 
-  const handled = useRef(new Set()) // pages where the offer was answered
-  const suppressAll = useRef(false)
-  const usedTip = useRef(false)
-  const usedChat = useRef(false)
-  const errors = useRef({ count: 0, last: 0, code: null })
-  const lastErrorByPage = useRef({})
-  const backs = useRef({})
-  const prevStep = useRef(null)
-  const pausedOn = useRef(null)
-  const stopStaff = useRef(null)
-  const handoffId = useRef(null)
-  const requestedAt = useRef(0)
-  const acceptedAt = useRef(0)
+  const T = DEMO;
+
+  const pageId = pageIdFor(pathname);
+
+  const step = stepOf(pageId);
+
+  const page = pageId ? getPage(pageId) : null;
+
+  /*
+    sheet:
+    null
+    menu
+    chat
+    consent
+    staff
+  */
+  const [sheet, setSheet] = useState(null);
+
+  /*
+    Assistance levels:
+
+    0 = normal
+    1 = 3-minute guidance
+    2 = 6-minute proactive AskSense / AI assistance
+  */
+  const [level, setLevel] = useState(0);
+
+  const [messages, setMessages] = useState([]);
+
+  const [asking, setAsking] = useState(false);
+
+  const [staff, setStaff] = useState({
+    status: "idle",
+    position: 0,
+    messages: [],
+    unread: false,
+  });
+
+  /*
+    Latest values for timers and event listeners.
+  */
+  const live = useRef({});
+
+  live.current = {
+    pageId,
+    step,
+    sessionId,
+    sheet,
+    staffStatus: staff.status,
+    prefs,
+    scenarios,
+  };
+
+  /*
+    Per-page / journey tracking.
+  */
+  const usedTip = useRef(false);
+
+  const usedChat = useRef(false);
+
+  const errors = useRef({
+    count: 0,
+    last: 0,
+    code: null,
+  });
+
+  const lastErrorByPage = useRef({});
+
+  const backs = useRef({});
+
+  const prevStep = useRef(null);
+
+  const stopStaff = useRef(null);
+
+  const handoffId = useRef(null);
+
+  const requestedAt = useRef(0);
+
+  const acceptedAt = useRef(0);
 
   const log = useCallback((type, detail = {}, id) => {
-    const { sessionId: s, pageId: p } = live.current
-    if (s) logEvent(s, id ?? p, type, detail)
-  }, [])
+    const { sessionId: currentSessionId, pageId: currentPageId } = live.current;
 
-  const staffActive = staff.status === 'waiting' || staff.status === 'joined'
+    if (currentSessionId) {
+      logEvent(currentSessionId, id ?? currentPageId, type, detail);
+    }
+  }, []);
 
-  // ---- Offer of help
-  const maybeOffer = useCallback(
-    (trigger) => {
-      const c = live.current
-      if (!c.sessionId || !c.step) return
-      if (suppressAll.current || handled.current.has(c.pageId)) return
-      if (c.offer || c.sheet || c.staffStatus === 'waiting' || c.staffStatus === 'joined') return
-      const id = nextId('o')
-      setOffer({ id, trigger })
-      logEvent(c.sessionId, c.pageId, 'offer_shown', { offer_id: id, trigger })
-    },
-    []
-  )
+  const staffActive = staff.status === "waiting" || staff.status === "joined";
 
-  // ---- New page: reset per-page counters, count returns to a step
+  /*
+    ----------------------------------------
+    NEW PAGE
+    ----------------------------------------
+
+    Reset page-specific assistance state.
+  */
   useEffect(() => {
-    setOffer(null)
-    setLevel(0)
-    setMessages([])
-    errors.current = { count: 0, last: 0, code: null }
-    pausedOn.current = null
-    const c = live.current
-    const from = prevStep.current
-    if (c.sessionId && step && from && from > step) {
-      logEvent(c.sessionId, `account.step${from}`, 'back')
-      backs.current[step] = (backs.current[step] ?? 0) + 1
+    setLevel(0);
+
+    setMessages([]);
+
+    errors.current = {
+      count: 0,
+      last: 0,
+      code: null,
+    };
+
+    const current = live.current;
+
+    const from = prevStep.current;
+
+    /*
+      Detect repeated back-and-forth navigation.
+
+      If the user goes backwards to the same step twice,
+      escalate directly to proactive assistance.
+    */
+    if (current.sessionId && step && from && from > step) {
+      logEvent(current.sessionId, `account.step${from}`, "back");
+
+      backs.current[step] = (backs.current[step] ?? 0) + 1;
+
       if (backs.current[step] === 2) {
-        logEvent(c.sessionId, c.pageId, 'friction', { trigger: 'back_and_forth' })
-        maybeOffer('back_and_forth')
+        logEvent(current.sessionId, current.pageId, "friction", {
+          trigger: "back_and_forth",
+        });
+
+        /*
+          Escalate AskSense directly.
+
+          No separate OfferCard is shown.
+        */
+        setLevel(2);
       }
     }
-    prevStep.current = step
-  }, [pageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist preference changes made during an active journey. The backend
-  // accepts only current_preferences; DOB, passport and contact details stay local.
-  const previousPrefs = useRef(null)
+    prevStep.current = step;
+  }, [pageId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /*
+    ----------------------------------------
+    PERSIST PREFERENCES
+    ----------------------------------------
+
+    Save preference changes during an active journey.
+  */
+  const previousPrefs = useRef(null);
+
   useEffect(() => {
-    if (!sessionId) { previousPrefs.current = prefs; return }
-    if (previousPrefs.current === null) { previousPrefs.current = prefs; return }
-    if (JSON.stringify(previousPrefs.current) === JSON.stringify(prefs)) return
-    previousPrefs.current = prefs
-    patchSession(sessionId, { current_preferences: toApiPrefs(prefs) }).catch((error) => {
-      console.error('Could not save preferences:', error)
-    })
-  }, [sessionId, prefs])
+    if (!sessionId) {
+      previousPrefs.current = prefs;
+      return;
+    }
 
-  // A new journey starts with a clean slate.
+    if (previousPrefs.current === null) {
+      previousPrefs.current = prefs;
+      return;
+    }
+
+    if (JSON.stringify(previousPrefs.current) === JSON.stringify(prefs)) {
+      return;
+    }
+
+    previousPrefs.current = prefs;
+
+    patchSession(sessionId, {
+      current_preferences: toApiPrefs(prefs),
+    }).catch((error) => {
+      console.error("Could not save preferences:", error);
+    });
+  }, [sessionId, prefs]);
+
+  /*
+    ----------------------------------------
+    NEW JOURNEY
+    ----------------------------------------
+
+    Reset journey-specific tracking.
+  */
   useEffect(() => {
-    handled.current = new Set()
-    suppressAll.current = false
-    backs.current = {}
-    lastErrorByPage.current = {}
-    usedTip.current = false
-    usedChat.current = false
-    prevStep.current = null
-  }, [sessionId])
+    backs.current = {};
 
-  // ---- Repeated errors: the same step fails twice
+    lastErrorByPage.current = {};
+
+    usedTip.current = false;
+
+    usedChat.current = false;
+
+    prevStep.current = null;
+  }, [sessionId]);
+
+  /*
+    ----------------------------------------
+    REPEATED ERRORS
+    ----------------------------------------
+
+    If the same page produces repeated errors,
+    escalate to level 2 AskSense assistance.
+  */
   useEffect(
     () =>
-      subscribeEvents((e) => {
-        if (e.type !== 'error') return
-        lastErrorByPage.current[e.pageId] = e.detail?.code ?? null
-        if (e.pageId !== live.current.pageId) return
-        const now = Date.now()
-        // Several field errors from one tap count once.
-        if (now - errors.current.last < 600) return
-        errors.current.last = now
-        errors.current.count += 1
+      subscribeEvents((event) => {
+        if (event.type !== "error") {
+          return;
+        }
+
+        lastErrorByPage.current[event.pageId] = event.detail?.code ?? null;
+
+        if (event.pageId !== live.current.pageId) {
+          return;
+        }
+
+        const now = Date.now();
+
+        /*
+          Multiple validation errors caused by
+          one button click count as one event.
+        */
+        if (now - errors.current.last < 600) {
+          return;
+        }
+
+        errors.current.last = now;
+
+        errors.current.count += 1;
+
         if (errors.current.count === 2) {
-          logEvent(e.sessionId, e.pageId, 'friction', { trigger: 'repeated_errors' })
-          maybeOffer('repeated_errors')
+          logEvent(event.sessionId, event.pageId, "friction", {
+            trigger: "repeated_errors",
+          });
+
+          /*
+            Escalate directly to proactive AskSense.
+
+            No OfferCard.
+          */
+          setLevel(2);
         }
       }),
-    [maybeOffer]
-  )
+    [],
+  );
 
-  // ---- Idle timers: no tap or key press for a while
+  /*
+    ----------------------------------------
+    IDLE TIMERS
+    ----------------------------------------
+
+    After 3 minutes:
+    Level 1 → guidance
+
+    After 6 minutes:
+    Level 2 → proactive AskSense / AI button
+  */
   useEffect(() => {
-    if (!sessionId || !step || sheet) return undefined
-    let t1, t2, t3
+    if (!sessionId || !step || sheet) {
+      return undefined;
+    }
+
+    let tipTimer;
+
+    let glowTimer;
+
     const arm = () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-      t1 = setTimeout(() => {
-        if (pausedOn.current !== live.current.pageId) {
-          pausedOn.current = live.current.pageId
-          log('friction', { trigger: 'long_pause' })
-        }
-        maybeOffer('long_pause')
-      }, T.offer)
-      t2 = setTimeout(() => setLevel((l) => Math.max(l, 1)), T.tip)
-      t3 = setTimeout(() => setLevel(2), T.glow)
-    }
+      clearTimeout(tipTimer);
+
+      clearTimeout(glowTimer);
+
+      /*
+        3 minutes
+        Show guidance.
+      */
+      tipTimer = setTimeout(() => {
+        log("friction", {
+          trigger: "long_pause_3min",
+        });
+
+        setLevel((currentLevel) => Math.max(currentLevel, 1));
+      }, T.tip);
+
+      /*
+        6 minutes
+        Escalate to proactive AskSense / AI help.
+      */
+      glowTimer = setTimeout(() => {
+        log("friction", {
+          trigger: "long_pause_6min",
+        });
+
+        setLevel(2);
+
+        setSheet((currentSheet) => {
+          if (currentSheet === null) {
+            return "menu";
+          }
+
+          return currentSheet;
+        });
+      }, T.glow);
+    };
+
     const poke = () => {
-      setLevel((l) => (l > 1 ? 1 : l))
-      arm()
-    }
-    const names = ['pointerdown', 'keydown', 'input', 'touchstart']
-    names.forEach((n) => window.addEventListener(n, poke, true))
-    arm()
+      arm();
+    };
+
+    const events = ["pointerdown", "keydown", "input", "touchstart"];
+
+    events.forEach((eventName) => {
+      window.addEventListener(eventName, poke, true);
+    });
+
+    arm();
+
     return () => {
-      names.forEach((n) => window.removeEventListener(n, poke, true))
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-    }
-  }, [sessionId, step, pageId, sheet, T.offer, T.tip, T.glow, log, maybeOffer])
+      events.forEach((eventName) => {
+        window.removeEventListener(eventName, poke, true);
+      });
 
-  // Log the first time a tip banner is shown.
+      clearTimeout(tipTimer);
+
+      clearTimeout(glowTimer);
+    };
+  }, [sessionId, step, pageId, sheet, T.tip, T.glow, log]);
+
+  /*
+    Log the first time guidance is used.
+  */
   useEffect(() => {
-    if (level >= 1) usedTip.current = true
-  }, [level])
+    if (level >= 1) {
+      usedTip.current = true;
+    }
+  }, [level]);
 
-  // ---- Sheets
+  /*
+    ----------------------------------------
+    SHEETS
+    ----------------------------------------
+  */
+
   const closeSheet = useCallback(() => {
-    setSheet(null)
-    setStaff((s) => (s.unread ? { ...s, unread: false } : s))
-  }, [])
+    setSheet(null);
+
+    setStaff((currentStaff) =>
+      currentStaff.unread
+        ? {
+            ...currentStaff,
+            unread: false,
+          }
+        : currentStaff,
+    );
+  }, []);
+
   const openHelp = useCallback(() => {
-    setOffer(null)
-    setSheet(live.current.staffStatus === 'idle' ? 'menu' : 'staff')
-  }, [])
+    setSheet(live.current.staffStatus === "idle" ? "menu" : "staff");
+  }, []);
+
   const openChat = useCallback(() => {
-    setOffer(null)
-    setSheet('chat')
-  }, [])
+    setSheet("chat");
+  }, []);
+
   const openStaff = useCallback(() => {
-    setOffer(null)
-    setSheet(live.current.staffStatus === 'idle' || live.current.staffStatus === 'resolved' ? 'consent' : 'staff')
-  }, [])
+    setSheet(
+      live.current.staffStatus === "idle" ||
+        live.current.staffStatus === "resolved"
+        ? "consent"
+        : "staff",
+    );
+  }, []);
 
-  // ---- Offer buttons
-  const offerChat = () => {
-    log('offer_accepted', { offer_id: offer.id, choice: 'ai' })
-    handled.current.add(pageId)
-    openChat()
-  }
-  const offerStaff = () => {
-    log('offer_accepted', { offer_id: offer.id, choice: 'person' })
-    handled.current.add(pageId)
-    openStaff()
-  }
-  const offerNo = (never = false) => {
-    log('offer_declined', { offer_id: offer.id })
-    handled.current.add(pageId)
-    if (never) suppressAll.current = true
-    setOffer(null)
-  }
+  /*
+    ----------------------------------------
+    AI ASSISTANT CHAT
+    ----------------------------------------
+  */
 
-  // ---- Assistant chat
   const ask = useCallback(
     async (text) => {
-      const question = text.trim().slice(0, 300)
-      const c = live.current
-      if (!question || asking || !c.pageId) return
-      usedChat.current = true
-      setMessages((m) => [...m, { id: nextId('m'), from: 'user', text: question, time: clock() }])
-      setAsking(true)
-      // AI is intentionally simulated in this prototype; no backend request is made.
-      await new Promise((resolve) => setTimeout(resolve, 650))
-      const res = answerFor(c.pageId, question, c.prefs.wording)
-      setAsking(false)
-      if (c.pageId !== live.current.pageId) return // customer moved on
-      const fallback = res.fallback || !res.answer
-      const answer = fallback
-        ? `I can’t answer that one reliably. Here is what we know about this step: ${pageVerifiedInfo(c.pageId)}`
-        : res.answer
-      if (fallback && c.sessionId) logEvent(c.sessionId, c.pageId, 'ai_question', { outcome: 'fallback' })
-      if (c.prefs.readAloud) speak(answer, c.prefs.language)
-      setMessages((m) => [
-        ...m,
-        { id: nextId('m'), from: 'bot', text: answer, time: clock(), fallback, refused: !!res.refused, feedback: null },
-      ])
+      const question = text.trim().slice(0, 300);
+
+      const current = live.current;
+
+      if (!question || asking || !current.pageId || !current.sessionId) {
+        return;
+      }
+
+      usedChat.current = true;
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: nextId("m"),
+          from: "user",
+          text: question,
+          time: clock(),
+        },
+      ]);
+
+      setAsking(true);
+
+      try {
+        const response = await explainQuestion({
+          session_id: current.sessionId,
+          page_id: current.pageId,
+          question,
+        });
+
+        if (current.pageId !== live.current.pageId) {
+          return;
+        }
+
+        const fallback = response.fallback || !response.answer;
+
+        const answer = fallback
+          ? "I’m unable to answer that reliably. Please contact customer service for assistance."
+          : response.answer;
+
+        if (current.prefs.readAloud) {
+          speak(answer, current.prefs.language);
+        }
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: nextId("m"),
+            from: "bot",
+            text: answer,
+            time: clock(),
+            fallback,
+            feedback: null,
+          },
+        ]);
+      } catch {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: nextId("m"),
+            from: "bot",
+            text: "I’m having trouble connecting right now. Please try again or contact customer service.",
+            time: clock(),
+            fallback: true,
+            feedback: null,
+          },
+        ]);
+      } finally {
+        setAsking(false);
+      }
     },
-    [asking]
-  )
+    [asking],
+  );
+
+  /*
+    ----------------------------------------
+    AI RESPONSE RATING
+    ----------------------------------------
+  */
 
   const rate = (id, outcome) => {
-    setMessages((m) => m.map((x) => (x.id === id ? { ...x, feedback: outcome } : x)))
-    log('ai_question', { outcome })
-    if (outcome === 'not_helped' && live.current.sessionId && live.current.step) openStaff()
-  }
+    setMessages((currentMessages) =>
+      currentMessages.map((message) =>
+        message.id === id
+          ? {
+              ...message,
+              feedback: outcome,
+            }
+          : message,
+      ),
+    );
 
-  // ---- Staff help (text only)
+    log("ai_question", {
+      outcome,
+    });
+
+    if (
+      outcome === "not_helped" &&
+      live.current.sessionId &&
+      live.current.step
+    ) {
+      openStaff();
+    }
+  };
+
+  /*
+    ----------------------------------------
+    STAFF HELP
+    ----------------------------------------
+
+    Existing staff texting simulation is preserved.
+  */
+
   const share = useMemo(() => {
-    const code = lastErrorByPage.current[pageId] ?? null
+    const code = lastErrorByPage.current[pageId] ?? null;
+
     return {
       step_no: step,
-      step_title: page?.title ?? '',
+
+      step_title: page?.title ?? "",
+
       preferences: {
         wording: prefs.wording,
         text_size: prefs.textSize,
-        voice: prefs.readAloud ? 'read_aloud' : 'off',
+        voice: prefs.readAloud ? "read_aloud" : "off",
         language: prefs.language,
       },
-      offers: usedChat.current ? ['ai'] : [],
-      tried: { tip: usedTip.current, chat: usedChat.current },
+
+      offers: usedChat.current ? ["ai"] : [],
+
+      tried: {
+        tip: usedTip.current,
+        chat: usedChat.current,
+      },
+
       last_error: code,
-    }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheet, pageId, step, page, prefs])
+  }, [sheet, pageId, step, page, prefs]);
 
   const sendRequest = () => {
-    const c = live.current
-    stopStaff.current?.()
-    handoffId.current = nextId('h')
-    requestedAt.current = Date.now()
-    logEvent(c.sessionId, c.pageId, 'handoff_request', { handoff_id: handoffId.current })
-    setStaff({ status: 'waiting', position: 2, messages: [], unread: false })
-    setSheet('staff')
-    stopStaff.current = startStaffSimulation(c.scenarios.staff, c.pageId, {
-      onPosition: (position) => setStaff((s) => ({ ...s, position })),
-      onAccepted: () => {
-        acceptedAt.current = Date.now()
-        logEvent(c.sessionId, c.pageId, 'handoff_accepted', {
-          handoff_id: handoffId.current,
-          wait_s: Math.round((Date.now() - requestedAt.current) / 1000),
-        })
-        setStaff((s) => ({ ...s, status: 'joined', unread: live.current.sheet !== 'staff' }))
+    const current = live.current;
+
+    stopStaff.current?.();
+
+    handoffId.current = nextId("h");
+
+    requestedAt.current = Date.now();
+
+    logEvent(current.sessionId, current.pageId, "handoff_request", {
+      handoff_id: handoffId.current,
+    });
+
+    setStaff({
+      status: "waiting",
+      position: 2,
+      messages: [],
+      unread: false,
+    });
+
+    setSheet("staff");
+
+    /*
+      Keep staff texting simulation.
+    */
+    stopStaff.current = startStaffSimulation(
+      current.scenarios.staff,
+      current.pageId,
+      {
+        onPosition: (position) => {
+          setStaff((currentStaff) => ({
+            ...currentStaff,
+            position,
+          }));
+        },
+
+        onAccepted: () => {
+          acceptedAt.current = Date.now();
+
+          logEvent(current.sessionId, current.pageId, "handoff_accepted", {
+            handoff_id: handoffId.current,
+
+            wait_s: Math.round((Date.now() - requestedAt.current) / 1000),
+          });
+
+          setStaff((currentStaff) => ({
+            ...currentStaff,
+
+            status: "joined",
+
+            unread: live.current.sheet !== "staff",
+          }));
+        },
+
+        onMessage: (text) => {
+          if (live.current.prefs.readAloud) {
+            speak(text, live.current.prefs.language);
+          }
+
+          setStaff((currentStaff) => ({
+            ...currentStaff,
+
+            messages: [
+              ...currentStaff.messages,
+              {
+                id: nextId("s"),
+                text,
+                time: clock(),
+              },
+            ],
+
+            unread: live.current.sheet !== "staff",
+          }));
+        },
+
+        onResolved: () => {
+          logEvent(current.sessionId, current.pageId, "handoff_resolved", {
+            handoff_id: handoffId.current,
+
+            resolve_s: Math.round((Date.now() - acceptedAt.current) / 1000),
+          });
+
+          setStaff((currentStaff) => ({
+            ...currentStaff,
+
+            status: "resolved",
+
+            unread: live.current.sheet !== "staff",
+          }));
+        },
       },
-      onMessage: (text) => {
-        if (live.current.prefs.readAloud) speak(text, live.current.prefs.language)
-        setStaff((s) => ({
-          ...s,
-          messages: [...s.messages, { id: nextId('s'), text, time: clock() }],
-          unread: live.current.sheet !== 'staff',
-        }))
-      },
-      onResolved: () => {
-        logEvent(c.sessionId, c.pageId, 'handoff_resolved', {
-          handoff_id: handoffId.current,
-          resolve_s: Math.round((Date.now() - acceptedAt.current) / 1000),
-        })
-        setStaff((s) => ({ ...s, status: 'resolved', unread: live.current.sheet !== 'staff' }))
-      },
-    })
-  }
+    );
+  };
 
   const endStaff = () => {
-    stopStaff.current?.()
-    stopStaff.current = null
-    setStaff({ status: 'idle', position: 0, messages: [], unread: false })
-    setSheet(null)
-  }
+    stopStaff.current?.();
 
-  useEffect(() => () => stopStaff.current?.(), [])
+    stopStaff.current = null;
 
-  // Leaving the journey ends any open request.
+    setStaff({
+      status: "idle",
+      position: 0,
+      messages: [],
+      unread: false,
+    });
+
+    setSheet(null);
+  };
+
+  useEffect(() => () => stopStaff.current?.(), []);
+
+  /*
+    Leaving the journey ends any open request.
+  */
   useEffect(() => {
-    if (!sessionId && stopStaff.current) endStaff()
-  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!sessionId && stopStaff.current) {
+      endStaff();
+    }
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /*
+    Expose the assistance level so the AskSense
+    button can visually respond:
+
+    level 0 → normal
+    level 1 → guidance shown
+    level 2 → proactive AI / AskSense emphasis
+  */
   const value = useMemo(
-    () => ({ openHelp, openChat, openStaff, level, pageId }),
-    [openHelp, openChat, openStaff, level, pageId]
-  )
+    () => ({
+      openHelp,
+      openChat,
+      openStaff,
+      level,
+      pageId,
+    }),
+    [openHelp, openChat, openStaff, level, pageId],
+  );
 
   const titles = {
-    menu: 'How can we help?',
-    chat: 'Assistant',
-    consent: 'Share a summary with our team?',
-    staff: 'Staff help',
-  }
+    menu: "How can we help?",
+    chat: "Assistant",
+    consent: "Share a summary with our team?",
+    staff: "Staff help",
+  };
 
   return (
     <HelpContext.Provider value={value}>
       {children}
 
-      {offer && !sheet && (
-        <OfferCard
-          trigger={offer.trigger}
-          onChat={offerChat}
-          onStaff={offerStaff}
-          onNo={() => offerNo(false)}
-          onNever={() => offerNo(true)}
-        />
-      )}
+      {staffActive || staff.status === "resolved"
+        ? sheet !== "staff" && (
+            <StaffStatusBar
+              staff={staff}
+              onOpen={() => {
+                setSheet("staff");
 
-      {staffActive || staff.status === 'resolved' ? (
-        sheet !== 'staff' && <StaffStatusBar staff={staff} onOpen={() => { setSheet('staff'); setStaff((s) => ({ ...s, unread: false })) }} />
-      ) : null}
+                setStaff((currentStaff) => ({
+                  ...currentStaff,
+                  unread: false,
+                }));
+              }}
+            />
+          )
+        : null}
 
       <Dialog
         open={sheet !== null}
         onClose={closeSheet}
-        title={titles[sheet] ?? ''}
-        className={sheet === 'chat' || sheet === 'staff' ? 'dialog--tall' : ''}
+        title={titles[sheet] ?? ""}
+        className={sheet === "chat" || sheet === "staff" ? "dialog--tall" : ""}
       >
-        {sheet === 'menu' && (
+        {sheet === "menu" && (
           <MenuSheet
             canStaff={!!sessionId && !!step}
             onChat={openChat}
@@ -384,7 +799,8 @@ export function HelpProvider({ children }) {
             onClose={closeSheet}
           />
         )}
-        {sheet === 'chat' && (
+
+        {sheet === "chat" && (
           <ChatSheet
             title={page?.title}
             pageId={pageId}
@@ -396,13 +812,23 @@ export function HelpProvider({ children }) {
             onStaff={openStaff}
           />
         )}
-        {sheet === 'consent' && <ConsentSheet share={share} onShare={sendRequest} onBack={() => setSheet('menu')} />}
-        {sheet === 'staff' && <StaffSheet staff={staff} onCancel={endStaff} onClose={closeSheet} />}
+
+        {sheet === "consent" && (
+          <ConsentSheet
+            share={share}
+            onShare={sendRequest}
+            onBack={() => setSheet("menu")}
+          />
+        )}
+
+        {sheet === "staff" && (
+          <StaffSheet staff={staff} onCancel={endStaff} onClose={closeSheet} />
+        )}
       </Dialog>
     </HelpContext.Provider>
-  )
+  );
 }
 
 export function useHelp() {
-  return useContext(HelpContext)
+  return useContext(HelpContext);
 }

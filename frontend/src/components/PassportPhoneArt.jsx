@@ -1,9 +1,12 @@
+import useT from '../i18n/useT'
+
 export default function PassportPhoneArt() {
+  const { t } = useT()
   return (
     <svg
       viewBox="0 0 240 160"
       role="img"
-      aria-label="A passport next to a phone"
+      aria-label={t('art.passportPhone')}
       style={{ display: 'block', width: '100%', maxWidth: 260, margin: '1rem auto 0' }}
     >
       <g fill="none" stroke="#242424" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">

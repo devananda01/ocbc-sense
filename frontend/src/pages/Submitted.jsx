@@ -5,14 +5,18 @@ import Screen from '../components/Screen'
 import Header from '../components/Header'
 import Card from '../components/Card'
 import Button from '../components/Button'
+import Guidance from '../components/Guidance'
+import PageReadAloud from '../components/PageReadAloud'
 import { usePreferences } from '../context/PreferencesContext'
 import { useJourney } from '../context/JourneyContext'
+import useT from '../i18n/useT'
 import { getPage, pageText } from '../data/content'
 
 export default function Submitted() {
   const navigate = useNavigate()
+  const { t, tw, lang } = useT()
   const { prefs } = usePreferences()
-  const { reference, reset } = useJourney()
+  const { reference } = useJourney()
   const [copied, setCopied] = useState('') // '' | 'ok' | 'failed'
   const page = getPage('account.submitted')
 
@@ -28,8 +32,7 @@ export default function Submitted() {
   }
 
   function home() {
-    reset()
-    navigate('/welcome')
+    navigate('/home')
   }
 
   return (
@@ -37,53 +40,49 @@ export default function Submitted() {
       header={<Header desktopOnly />}
       footer={
         <>
-          <Button onClick={() => navigate('/next')}>See details</Button>
-          <Button variant="tertiary" onClick={home}>Go to home</Button>
+          <Button onClick={home}>{t('sub.home')}</Button>
+          <Button variant="tertiary" onClick={() => navigate('/next')}>{t('sub.details')}</Button>
         </>
       }
     >
       <div className="saved">
         <span className="saved__icon saved__icon--ok" aria-hidden="true"><Check size={32} /></span>
-        <h1 className="saved__title">Application submitted</h1>
-        <p className="saved__intro">{pageText(page, prefs.wording)}</p>
+        <h1 className="saved__title">{t('sub.title')}</h1>
+        <PageReadAloud
+          text={[
+            t('sub.title'),
+            pageText(page, prefs.wording, lang),
+            tw('sub.guidance.next'),
+          ].filter(Boolean).join('. ')}
+        />
+        <p className="saved__intro">{pageText(page, prefs.wording, lang)}</p>
+        <Guidance message={tw('sub.guidance.next')} />
       </div>
 
       <Card className="ref-card">
-        <p className="ref-card__label">Reference number</p>
+        <p className="ref-card__label">{t('common.refLabel')}</p>
         <p className="ref-card__number">{reference}</p>
         <Button variant="secondary" onClick={copy}>
-          <Copy size={18} aria-hidden="true" /> Copy reference
+          <Copy size={18} aria-hidden="true" /> {t('common.copyRef')}
         </Button>
         <p className="step__caption" role="status">
-          {copied === 'ok' && 'Copied.'}
-          {copied === 'failed' && 'Couldn’t copy. Please write the number down.'}
+          {copied === 'ok' && t('common.copied')}
+          {copied === 'failed' && t('common.copyFailed')}
         </p>
       </Card>
 
-      <h2 className="step__subtitle">What happens next</h2>
+      <h2 className="step__subtitle">{t('next.heading')}</h2>
       <Card>
         <ol className="next-steps">
-          <li>
-            <span className="next-steps__num" aria-hidden="true">1</span>
-            <div>
-              <p className="next-steps__title">Check your email</p>
-              <p className="next-steps__text">We’ll ask for one supporting document.</p>
-            </div>
-          </li>
-          <li>
-            <span className="next-steps__num" aria-hidden="true">2</span>
-            <div>
-              <p className="next-steps__title">Reply within 7 days</p>
-              <p className="next-steps__text">Send the document we ask for.</p>
-            </div>
-          </li>
-          <li>
-            <span className="next-steps__num" aria-hidden="true">3</span>
-            <div>
-              <p className="next-steps__title">Wait for the result</p>
-              <p className="next-steps__text">We may take up to 21 working days after we receive it to tell you.</p>
-            </div>
-          </li>
+          {[1, 2, 3].map((n) => (
+            <li key={n}>
+              <span className="next-steps__num" aria-hidden="true">{n}</span>
+              <div>
+                <p className="next-steps__title">{t(`next.${n}.title`)}</p>
+                <p className="next-steps__text">{tw(`next.${n}.text`)}</p>
+              </div>
+            </li>
+          ))}
         </ol>
       </Card>
     </Screen>

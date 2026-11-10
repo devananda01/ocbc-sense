@@ -1,6 +1,8 @@
 import Button from './Button'
+import useT from '../i18n/useT'
 
 export default function DetailRow({ icon: Icon, label, value, onEdit }) {
+  const { t } = useT()
   return (
     <div className="detail">
       <span className="detail__icon" aria-hidden="true"><Icon size={20} /></span>
@@ -9,7 +11,7 @@ export default function DetailRow({ icon: Icon, label, value, onEdit }) {
         <span className="detail__value">{value}</span>
       </span>
       {onEdit && (
-        <Button variant="tertiary" aria-label={`Edit ${label}`} onClick={onEdit}>Edit</Button>
+        <Button variant="tertiary" aria-label={t('common.editField', { label })} onClick={onEdit}>{t('common.edit')}</Button>
       )}
     </div>
   )

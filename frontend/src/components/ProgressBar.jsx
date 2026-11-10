@@ -1,7 +1,9 @@
 import './ProgressBar.css'
+import useT from '../i18n/useT'
 
 export default function ProgressBar({ current, total = 6, label, right }) {
-  const text = label ?? `Step ${current} of ${total}`
+  const { t } = useT()
+  const text = label ?? t('step.label', { n: current, total })
   return (
     <div className="progress">
       <div className="progress__top">
